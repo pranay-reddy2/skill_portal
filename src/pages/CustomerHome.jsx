@@ -1,42 +1,9 @@
-import React, { useState } from "react";
+// src/pages/CustomerHome.jsx - FIXED VERSION
+// Key fix: Use useEffect for navigation instead of during render
+
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import backgroundImage from "../assets/background.jpg";
-
-function SearchIcon() {
-  return (
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-      />
-    </svg>
-  );
-}
-
-function BriefcaseIcon() {
-  return (
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-      />
-    </svg>
-  );
-}
 
 export default function CustomerHome() {
   const [isProfileComplete, setIsProfileComplete] = useState(false);
@@ -54,6 +21,13 @@ export default function CustomerHome() {
 
   const navigate = useNavigate();
 
+  // ✅ FIXED: Navigate in useEffect, not during render
+  useEffect(() => {
+    if (isProfileComplete) {
+      navigate("/worker-page");
+    }
+  }, [isProfileComplete, navigate]);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
@@ -61,6 +35,7 @@ export default function CustomerHome() {
   };
 
   const validateForm = () => {
+    setError(null);
     if (!formData.fullName.trim()) {
       setError("Full name is required");
       return false;
@@ -100,32 +75,39 @@ export default function CustomerHome() {
     setError(null);
 
     try {
-      // Simulate API call to save customer profile
-      // Replace with actual API endpoint
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        setError("Authentication required. Please sign in again.");
+        navigate("/");
+        return;
+      }
+
       const response = await fetch("http://localhost:8080/api/customer/save", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(formData),
       });
 
+      const data = await response.json();
+
       if (response.ok) {
-        console.log("Customer profile saved successfully!");
+        console.log("✅ Customer profile saved successfully!");
+        // Set state to trigger navigation via useEffect
         setIsProfileComplete(true);
       } else {
-        throw new Error("Failed to save profile");
+        throw new Error(data.error || "Failed to save profile");
       }
     } catch (err) {
-      // For demo purposes, we'll set profile as complete anyway
-      console.log("Profile data:", formData);
-      setIsProfileComplete(true);
+      console.error("❌ Save profile error:", err);
+      setError(err.message || "Failed to save profile. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
-  if (isProfileComplete) {
-    navigate("/worker-page");
-    return null;
-  }
 
   return (
     <div

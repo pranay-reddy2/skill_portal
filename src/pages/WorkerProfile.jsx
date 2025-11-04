@@ -1,3 +1,9 @@
+// src/pages/WorkerProfile.jsx - FIXED VERSION
+// Key fixes:
+// 1. Better error handling for contact requests
+// 2. Proper endpoint usage
+// 3. Added loading state for requests
+
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getUserData } from "../config/api";
@@ -31,6 +37,7 @@ export default function WorkerOwnProfile() {
   const [reviews, setReviews] = useState([]);
   const [contactRequests, setContactRequests] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [requestsLoading, setRequestsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -49,7 +56,6 @@ export default function WorkerOwnProfile() {
       setError(null);
 
       console.log("📝 Fetching worker profile:", id);
-      console.log("👤 Current user:", currentUser);
 
       const token = localStorage.getItem("token");
       if (!token) {
@@ -61,9 +67,7 @@ export default function WorkerOwnProfile() {
 
       // Fetch worker profile
       const workerRes = await fetch(`http://localhost:8080/api/worker/${id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       const workerData = await workerRes.json();
@@ -76,19 +80,11 @@ export default function WorkerOwnProfile() {
       const fetchedWorker = workerData.worker || workerData;
       setWorker(fetchedWorker);
 
-      // ✅ FIXED: Better authorization check
-      // Check if this worker belongs to the current user
+      // Authorization check
       if (currentUser && currentUser.role === "worker") {
-        // Compare the createdBy field with current user's ID
         const workerOwnerId =
           fetchedWorker.createdBy?._id || fetchedWorker.createdBy;
         const currentUserId = currentUser.id || currentUser._id;
-
-        console.log("🔐 Authorization check:");
-        console.log("  Worker owner ID:", workerOwnerId);
-        console.log("  Current user ID:", currentUserId);
-        console.log("  Worker profile from user:", currentUser.workerProfile);
-        console.log("  URL param ID:", id);
 
         if (
           workerOwnerId?.toString() !== currentUserId?.toString() &&
@@ -99,24 +95,12 @@ export default function WorkerOwnProfile() {
           setIsLoading(false);
           return;
         }
-
-        console.log("✅ Authorization passed");
       }
 
-      // Fetch reviews
-      try {
-        const reviewsRes = await fetch(
-          `http://localhost:8080/api/reviews/worker/${id}`
-        );
-        const reviewsData = await reviewsRes.json();
-        if (reviewsRes.ok) {
-          setReviews(reviewsData.reviews || []);
-        }
-      } catch (err) {
-        console.error("Error loading reviews:", err);
-      }
+      // Fetch reviews (non-blocking)
+      fetchReviews();
 
-      // Fetch contact requests
+      // Fetch contact requests (non-blocking)
       fetchContactRequests();
     } catch (err) {
       console.error("❌ Error loading worker data:", err);
@@ -126,29 +110,60 @@ export default function WorkerOwnProfile() {
     }
   };
 
+  const fetchReviews = async () => {
+    try {
+      const reviewsRes = await fetch(
+        `http://localhost:8080/api/reviews/worker/${id}`
+      );
+      const reviewsData = await reviewsRes.json();
+      if (reviewsRes.ok) {
+        setReviews(reviewsData.reviews || []);
+      }
+    } catch (err) {
+      console.error("Error loading reviews:", err);
+    }
+  };
+
   const fetchContactRequests = async () => {
     try {
+      setRequestsLoading(true);
       const token = localStorage.getItem("token");
 
-      // ✅ FIXED: Use correct endpoint without worker ID
+      if (!token) {
+        console.error("❌ No token for contact requests");
+        return;
+      }
+
+      console.log("📞 Fetching contact requests...");
+
+      // ✅ FIXED: Correct endpoint
       const response = await fetch(
         `http://localhost:8080/api/contacts/worker`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         }
       );
 
+      console.log("📥 Contact requests response status:", response.status);
+
       const data = await response.json();
+      console.log("📥 Contact requests data:", data);
 
       if (response.ok) {
         setContactRequests(data.requests || []);
+        console.log(`✅ Loaded ${data.requests?.length || 0} contact requests`);
       } else {
-        console.error("Failed to load contact requests:", data.error);
+        console.error("❌ Failed to load contact requests:", data.error);
+        // Don't throw error - just log it so profile still loads
       }
     } catch (err) {
-      console.error("Error loading contact requests:", err);
+      console.error("❌ Error loading contact requests:", err);
+      // Don't throw error - just log it
+    } finally {
+      setRequestsLoading(false);
     }
   };
 
@@ -366,7 +381,7 @@ export default function WorkerOwnProfile() {
 
           {/* Tab Content */}
           <div className="p-6">
-            {/* Overview */}
+            {/* Overview Tab */}
             {activeTab === "overview" && (
               <div className="space-y-6">
                 {worker.availability && (
@@ -425,7 +440,7 @@ export default function WorkerOwnProfile() {
               </div>
             )}
 
-            {/* Reviews */}
+            {/* Reviews Tab */}
             {activeTab === "reviews" && (
               <div className="space-y-4">
                 {reviews.length === 0 ? (
@@ -460,13 +475,22 @@ export default function WorkerOwnProfile() {
               </div>
             )}
 
-            {/* Contact Requests */}
+            {/* Contact Requests Tab */}
             {activeTab === "requests" && (
               <div className="space-y-4">
-                {contactRequests.length === 0 ? (
+                {requestsLoading ? (
                   <p className="text-center text-gray-600 py-8">
-                    No contact requests yet
+                    Loading requests...
                   </p>
+                ) : contactRequests.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-600 mb-4">
+                      No contact requests yet
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Requests from customers will appear here
+                    </p>
+                  </div>
                 ) : (
                   contactRequests.map((request) => (
                     <div
@@ -551,7 +575,7 @@ export default function WorkerOwnProfile() {
               </div>
             )}
 
-            {/* Analytics */}
+            {/* Analytics Tab */}
             {activeTab === "analytics" && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
